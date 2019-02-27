@@ -15,8 +15,9 @@
 	 * Generates the property grid
 	 * @param {object} obj - The object whose properties we want to display
 	 * @param {object} meta - A metadata object describing the obj properties
+	 * @param {object} optionalPropsOrder - An optional array of strings to specify properties order
 	 */
-	$.fn.jqPropertyGrid = function(obj, meta) {
+	$.fn.jqPropertyGrid = function(obj, meta, optionalPropsOrder) {
 		// Check if the user called the 'get' function (to get the values back from the grid).
 		if (typeof obj === 'string' && obj === 'get') {
 			if (typeof this.data(GET_VALS_FUNC_KEY) === 'function') {
@@ -39,8 +40,15 @@
 		var getValueFuncs = {};
 		var pgId = 'pg' + (pgIdSequence++);
 
+		var postAdditionCallbacks = [];
+
 		var currGroup;
-		for (var prop in obj) {
+		var propsArray = optionalPropsOrder || Object.keys(obj);
+		for (var propIndex in propsArray) {
+			if (!propsArray.hasOwnProperty(propIndex)) {
+				continue;
+			}
+			var prop = propsArray[propIndex];
 			// Skip if this is not a direct property, a function, or its meta says it's non browsable
 			if (!obj.hasOwnProperty(prop) || typeof obj[prop] === 'function' || (meta[prop] && meta[prop].browsable === false)) {
 				continue;
@@ -58,14 +66,16 @@
 			propertyRowsHTML[currGroup] = propertyRowsHTML[currGroup] || '';
 
 			// Append the current cell html into the group html
-			propertyRowsHTML[currGroup] += getPropertyRowHtml(pgId, prop, obj[prop], meta[prop], postCreateInitFuncs, getValueFuncs);
+			var row = getPropertyRowHtml(pgId, prop, obj[prop], meta[prop], postCreateInitFuncs, getValueFuncs);
+			propertyRowsHTML[currGroup] += row.html;
+			postAdditionCallbacks.push(row.postAdditionCallback);
 		}
 
 		// Now we have all the html we need, just assemble it
 		var innerHTML = '<table class="pgTable">';
 		for (var group in groupsHeaderRowHTML) {
 			// Add the group row
-			innerHTML += groupsHeaderRowHTML[group];
+			//innerHTML += groupsHeaderRowHTML[group];
 			// Add the group cells
 			innerHTML += propertyRowsHTML[group];
 		}
@@ -79,6 +89,10 @@
 		// Close the table and apply it to the div
 		innerHTML += '</table>';
 		this.html(innerHTML);
+
+		for (var j = 0; j < postAdditionCallbacks.length; j++) {
+			postAdditionCallbacks[j]();
+		}
 
 		// Call the post init functions
 		for (var i = 0; i < postCreateInitFuncs.length; ++i) {
@@ -130,39 +144,231 @@
 
 		var valueHTML;
 
+
 		// If boolean create checkbox
+		var options = meta.options;
+
 		if (type === 'boolean' || (type === '' && typeof value === 'boolean')) {
 			valueHTML = '<input type="checkbox" id="' + elemId + '" value="' + name + '"' + (value ? ' checked' : '') + ' />';
-			if (getValueFuncs) { getValueFuncs[name] = function() {return $('#'+elemId).prop('checked');}; }
+			if (getValueFuncs) { getValueFuncs[name] = function() {
+				return $('#'+elemId).prop('checked');};
+			}
 
 		// If options create drop-down list
-		} else if (type === 'options' && Array.isArray(meta.options)) {
-			valueHTML = getSelectOptionHtml(elemId, value, meta.options);
+		} else if (type === 'options' && Array.isArray(options)) {
+			valueHTML = getSelectOptionHtml(elemId, value, options);
 			if (getValueFuncs) { getValueFuncs[name] = function() {return $('#'+elemId).val();}; }
 
 		// If number and a jqueryUI spinner is loaded use it
 		} else if (typeof $.fn.spinner === 'function' && (type === 'number' || (type === '' && typeof value === 'number'))) {
 			valueHTML = '<input type="text" id="' + elemId + '" value="' + value + '" style="width:50px" />';
-			if (postCreateInitFuncs) { postCreateInitFuncs.push(initSpinner(elemId, meta.options)); }
+			if (postCreateInitFuncs) { postCreateInitFuncs.push(initSpinner(elemId, options)); }
 			if (getValueFuncs) { getValueFuncs[name] = function() {return $('#'+elemId).spinner('value');}; }
 
 		// If color and we have the spectrum color picker use it
 		} else if (type === 'color' && typeof $.fn.spectrum === 'function') {
 			valueHTML = '<input type="text" id="' + elemId + '" />';
-			if (postCreateInitFuncs) { postCreateInitFuncs.push(initColorPicker(elemId, value, meta.options)); }
-			if (getValueFuncs) { getValueFuncs[name] = function() {return $('#'+elemId).spectrum('get').toHexString();}; }
+			if (postCreateInitFuncs) {
+				postCreateInitFuncs.push(initColorPicker(elemId, value, options));
+			}
+			if (getValueFuncs) {
+				getValueFuncs[name] = function () {
+					return $('#' + elemId).spectrum('get').toRgbString();
+				};
+			}
 
-		// Default is textbox
+		} else if (type === 'textarea') {
+			var maxlength='';
+			if (options!=null && options.maxlength!=null) {
+				maxlength = 'maxlength="' + options.maxlength + '"';
+			}
+
+			valueHTML = '<textarea class = "pgTextArea" '+maxlength+' id="' + elemId + '">' + value + '</textarea>';
+			if (getValueFuncs) {
+				getValueFuncs[name] = function () {
+					return $('#' + elemId).val();
+				};
+			}
+
+
+		} else if (type === 'tags' && typeof $.fn.tagit === 'function') {
+            elemId = elemId.replace(/ /g, '_');
+			valueHTML = '<ul id="' + elemId + '"></ul>';
+			if (postCreateInitFuncs) {
+				postCreateInitFuncs.push(function() {
+					var tagsEditor = $('#' + elemId);
+					var firstChangeEvent = true;
+					var initialTags = value.split(',').map(function(tag) {
+						return {label:tag, value:tag};
+					});
+					tagsEditor.tagit({
+						tagSource: meta.standardTags,
+						initialTags: initialTags,
+						sortable: true,
+						tagsChanged: function (tag, action) {
+							if (firstChangeEvent) {
+								firstChangeEvent = false;
+								return;
+							}
+							meta.tagValidator(tag, tagsEditor, action);
+							var tags = tagsEditor.tagit("tags");
+							var tagToLabel = function(tag) { return tag.label; };
+							var tagsCSV = tags.map(tagToLabel).join(',');
+							meta.changeCallback(elemId, name, tagsCSV, function () {
+								tagsEditor.removeClass("pgModified");
+							});
+						}
+
+					});
+				});
+			}
 		} else {
-			valueHTML = '<input type="text" id="' + elemId + '" value="' + value + '"</input>';
-			if (getValueFuncs) { getValueFuncs[name] = function() {return $('#'+elemId).val();}; }
+			// Default is textbox
+			var opt='';
+			var cellText='';
+			if (options!=null){
+				if (options.editable=="false"){
+					opt=opt+ ' readonly="readonly" ';
+				}
+
+				if (options.style=="large"){
+					cellText =' class="pgTextLarge" ';
+				}
+			}
+
+			valueHTML = '<input type="text"'+cellText+opt+'id="' + elemId + '" value="' + value + '"></input>';
+			if (getValueFuncs) {
+				getValueFuncs[name] = function () {
+					return $('#' + elemId).val();
+				};
+			}
 		}
 
 		if (typeof meta.description === 'string' && meta.description) {
 			displayName += '<span class="pgTooltip" title="' + meta.description + '">[?]</span>';
 		}
 
-		return '<tr class="pgRow"><td class="pgCell">' + displayName + '</td><td class="pgCell">' + valueHTML + '</td></tr>';
+
+		return {
+			html: '<tr class="pgRow"><td class="pgCell">' + displayName + '</td><td class="pgCell">' + valueHTML + '</td></tr>',
+
+			postAdditionCallback: function () {
+				if (!meta.changeCallback) {
+					return;
+				}
+				var maxLength=0;
+				var element = $('#' + elemId);
+				var idDependency=null;
+				if (meta.options!=null) {
+					var objOptions = meta.options;
+					maxLength = objOptions.maxlength;
+					if (maxLength!=0 && type=== 'textarea') {
+						element.popover({
+							content: 'Maximum ' + maxLength + ' characters allowed',
+							trigger: 'manual'
+						});
+					}
+				}
+
+				element.on('change', function () {
+					var currentValue = $(this).val();
+
+					var colorType = false;
+					if (elemId.endsWith('color')) {
+						colorType = true;
+					}
+
+					if (colorType) {
+						currentValue = $('#' + elemId).spectrum('get').toRgbString();
+					}
+
+					meta.changeCallback(elemId, name, currentValue, function () {
+						$('#' + elemId).removeClass("pgModified");
+						if (idDependency!=null){
+							$(idDependency).removeClass("pgModified");
+						}
+					});
+				});
+
+				element.on('keyup', function (e) {
+					if ((maxLength!=0) ) {
+						textLimit($(this).val(), maxLength, elemId);
+					}
+					var code = e.keyCode || e.which;
+					if ((code == 9)||(code == 13)||(code>=16 && code<=20)||(code==27) ||
+						(code>=33 && code<=40)||(code>=44 && code<=46)){
+						return;
+					}
+					element.addClass("pgModified");
+					if  (meta.options!=null) {
+						var objOptions = meta.options;
+						var currentValue = $(this).val();
+
+						if (objOptions.validator) {
+							var validMessage=objOptions.validator(currentValue);
+							if (validMessage!=null){
+								element.addClass("noValidCharacter");
+								element.popover({
+									trigger: 'manual'
+								});
+								showMessageValidator(elemId, validMessage);
+							}else{
+								element.removeClass("noValidCharacter");
+							}
+						}
+
+						idDependency = objOptions.idDependency;
+						if (idDependency != null) {
+
+							var depValue= $(idDependency).val();
+							if (depValue != null) {
+							   var newValue=meta.transformValue(currentValue);
+							   if (newValue == ''){
+								   return;
+							   }
+							   $(idDependency).val(newValue);
+							   $(idDependency).addClass("pgModified");
+							}
+						}
+					}
+
+				});
+
+				element.on('keypress', function (e) {
+					if ((maxLength!=0) ) {
+						textLimit($(this).val(), maxLength, elemId);
+					}
+					element.addClass("pgModified");
+				});
+			}
+		};
+	}
+
+	function showMessageValidator( elemId, validMessage) {
+		$('#' + elemId).data('bs.popover').options.content = validMessage;
+		$('#' + elemId).popover('show');
+		setTimeout(function () {
+			$('#' + elemId).popover('hide');
+		}, 2000);
+	}
+
+	function textLimit(value, maxlen, elemId) {
+		if (lengthInUtf8Bytes(value) >= parseInt(maxlen)) {
+			$('#' + elemId).popover('show');
+			setTimeout(function () {
+				$('#' + elemId).popover('hide');
+			}, 2000);
+		}
+	}
+
+	function lengthInUtf8Bytes(str) {
+		var newLines = str.match(/(\r\n|\n|\r)/g);
+		var addition = 0;
+		if (newLines != null) {
+			addition = newLines.length;
+		}
+
+	   return str.length + addition;
 	}
 
 	/**
@@ -177,7 +383,7 @@
 		selectedValue = selectedValue || '';
 		options = options || [];
 
-		var html = '<select';
+		var html = '<select class="pgTextLarge" ';
 		if (id) {html += ' id="' + id + '"';}
 		html += '>';
 
@@ -185,7 +391,6 @@
 		for (var i = 0; i < options.length; i++) {
 			value = typeof options[i] === 'object' ? options[i].value : options[i];
 			text = typeof options[i] === 'object' ? options[i].text : options[i];
-
 			html += '<option value="' + value + '"' + (selectedValue === value ? ' selected>' : '>');
 			html += text + '</option>';
 		}
