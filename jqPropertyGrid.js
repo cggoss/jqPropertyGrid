@@ -191,7 +191,7 @@
 			}
 
 
-		} else if (type === 'tags' && typeof $.fn.tagit === 'function') {
+		} else if (type === 'tags' && typeof $.fn.jtagit === 'function') {
             elemId = elemId.replace(/ /g, '_');
 			valueHTML = '<ul id="' + elemId + '"></ul>';
 			if (postCreateInitFuncs) {
@@ -201,7 +201,7 @@
 					var initialTags = value.split(',').map(function(tag) {
 						return {label:tag, value:tag};
 					});
-					tagsEditor.tagit({
+					tagsEditor.jtagit({
 						tagSource: meta.standardTags,
 						initialTags: initialTags,
 						sortable: true,
@@ -211,7 +211,7 @@
 								return;
 							}
 							meta.tagValidator(tag, tagsEditor, action);
-							var tags = tagsEditor.tagit("tags");
+							var tags = tagsEditor.jtagit("tags");
 							var tagToLabel = function(tag) { return tag.label; };
 							var tagsCSV = tags.map(tagToLabel).join(',');
 							meta.changeCallback(elemId, name, tagsCSV, function () {
