@@ -183,7 +183,12 @@
 				maxlength = 'maxlength="' + options.maxlength + '"';
 			}
 
-			valueHTML = '<textarea class = "pgTextArea" '+maxlength+' id="' + elemId + '">' + value + '</textarea>';
+			var placeholder = '';
+			if (options!=null && options.placeholder!=null) {
+				placeholder = options.placeholder;
+			}
+			valueHTML = '<textarea placeholder="'+placeholder+'" class = "pgTextArea" '+maxlength+' id="' + elemId + '">' + value + '</textarea>';
+
 			if (getValueFuncs) {
 				getValueFuncs[name] = function () {
 					return $('#' + elemId).val();
