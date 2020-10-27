@@ -1,6 +1,6 @@
 {
     "name": "@cggoss/jqpropertygrid",
-    "version": "0.1.3",
+    "version": "0.1.4",
     "description": "A small and simple property grid in JS to view/edit POJOs, excellent if you have a \"settings\" object you want to give the user to edit",
     "main": "jqPropertyGrid.js",
     "directories": {

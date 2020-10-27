@@ -241,7 +241,11 @@
 				}
 			}
 
-			valueHTML = '<input type="text"'+cellText+opt+'id="' + elemId + '" value="' + value + '"></input>';
+            if (options && options.placeholder) {
+                opt += ' placeholder="' + options.placeholder + '" ';
+            }
+
+            valueHTML = '<input type="text"'+cellText+opt+'id="' + elemId + '" value="' + value + '"></input>';
 			if (getValueFuncs) {
 				getValueFuncs[name] = function () {
 					return $('#' + elemId).val();
